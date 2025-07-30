@@ -4,8 +4,17 @@
 // Constants (inline for content script compatibility)
 const STORAGE_KEYS = {
     PRANK_ENABLED: 'prankEnabled',
+    HUMOR_MODE: 'humorMode',
     CACHE_PREFIX: 'factCache_'
 };
+
+const HUMOR_MODES = {
+    GOOFY: 'goofy',
+    OUTRAGEOUS: 'outrageous', 
+    OBSCENE: 'obscene'
+};
+
+const DEFAULT_HUMOR_MODE = HUMOR_MODES.GOOFY;
 
 const WIKIPEDIA = {
     CONTENT_SELECTORS: [
@@ -39,7 +48,7 @@ const CONFIG = {
 
 const API_CONFIG = {
     OPENAI_ENDPOINT: 'https://api.openai.com/v1/chat/completions',
-    API_KEY: 'YOUR_OPENAI_API_KEY_HERE',
+    // API_KEY: 'YOUR_OPENAI_API_KEY_HERE',
     MODEL: 'gpt-3.5-turbo',
     MAX_TOKENS: 150,
     TEMPERATURE: 0.9
@@ -101,11 +110,16 @@ async function processPage() {
     try {
         console.log('Processing Wikipedia page...');
         
-        // Check if prank is enabled
-        const result = await chrome.storage.sync.get([STORAGE_KEYS.PRANK_ENABLED]);
+        // Check if prank is enabled and get humor mode
+        const result = await chrome.storage.sync.get([
+            STORAGE_KEYS.PRANK_ENABLED,
+            STORAGE_KEYS.HUMOR_MODE
+        ]);
         const isEnabled = result[STORAGE_KEYS.PRANK_ENABLED] || false;
+        const humorMode = result[STORAGE_KEYS.HUMOR_MODE] || DEFAULT_HUMOR_MODE;
         
         console.log('Prank status:', isEnabled ? 'ENABLED' : 'DISABLED');
+        console.log('Humor mode:', humorMode);
         
         if (isEnabled) {
             // Extract page context
@@ -118,7 +132,7 @@ async function processPage() {
             
             // Inject facts into selected paragraphs
             if (selectedParagraphs.length > 0) {
-                await injectFactsIntoParagraphs();
+                await injectFactsIntoParagraphs(humorMode);
             }
         }
         
@@ -133,8 +147,8 @@ async function processPage() {
 /**
  * Inject facts into selected paragraphs
  */
-async function injectFactsIntoParagraphs() {
-    console.log('Starting fact injection process...');
+async function injectFactsIntoParagraphs(humorMode) {
+    console.log('Starting fact injection process with humor mode:', humorMode);
     let successCount = 0;
     let errorCount = 0;
     
@@ -144,7 +158,7 @@ async function injectFactsIntoParagraphs() {
             console.log(`Injecting fact ${i + 1}/${selectedParagraphs.length}...`);
             
             // Generate and inject fact
-            const fact = await generateFactForParagraph(paragraph);
+            const fact = await generateFactForParagraph(paragraph, humorMode);
             const injectionResult = injectFactIntoParagraph(paragraph, fact);
             
             if (injectionResult.success) {
@@ -187,20 +201,20 @@ async function injectFactsIntoParagraphs() {
 /**
  * Generate a fact for a specific paragraph
  */
-async function generateFactForParagraph(paragraph) {
+async function generateFactForParagraph(paragraph, humorMode) {
     const paragraphText = paragraph.textContent.trim();
     
-    // Check cache first
-    const cacheKey = createCacheKey(pageContext, paragraphText);
+    // Check cache first (include humor mode in cache key)
+    const cacheKey = createCacheKey(pageContext, paragraphText, humorMode);
     const cachedFact = await getCachedFact(cacheKey);
     
     if (cachedFact) {
-        console.log('Using cached fact for paragraph');
+        console.log('Using cached fact for paragraph (mode:', humorMode, ')');
         return cachedFact;
     }
     
-    // Generate new fact via API
-    const fact = await callOpenAIAPI(pageContext, paragraphText);
+    // Generate new fact via API with humor mode
+    const fact = await callOpenAIAPI(pageContext, paragraphText, humorMode);
     
     // Cache the result
     await cacheFact(cacheKey, fact);
@@ -211,15 +225,16 @@ async function generateFactForParagraph(paragraph) {
 /**
  * Call OpenAI API to generate a fact
  */
-async function callOpenAIAPI(context, paragraphText) {
-    const prompt = createPrompt(context, paragraphText);
+async function callOpenAIAPI(context, paragraphText, humorMode) {
+    const prompt = createPrompt(context, paragraphText, humorMode);
+    const systemPrompt = createSystemPrompt(humorMode);
     
     const requestBody = {
         model: API_CONFIG.MODEL,
         messages: [
             {
                 role: "system",
-                content: "You are a creative writer specializing in generating amusing, obviously fake but initially plausible facts for harmless pranks. Create facts that are absurd enough to be funny but believable enough to cause initial confusion."
+                content: systemPrompt
             },
             {
                 role: "user",
@@ -593,7 +608,28 @@ function shuffleArray(array) {
     return array;
 }
 
-function createPrompt(context, paragraphText) {
+/**
+ * Create system prompt based on humor mode
+ */
+function createSystemPrompt(humorMode) {
+    const basePrompt = "You are a creative writer specializing in generating amusing, obviously fake but initially plausible facts for harmless pranks.";
+    
+    switch (humorMode) {
+        case HUMOR_MODES.GOOFY:
+            return `${basePrompt} Create family-friendly, silly facts that are safe for all audiences and workplace viewing. Use whimsical scenarios and innocent humor that would make people chuckle without offending anyone. Focus on harmless quirks, cute scenarios, and playful situations.`;
+            
+        case HUMOR_MODES.OUTRAGEOUS:
+            return `${basePrompt} Create embarrassing, bizarre, and ridiculous facts that push boundaries without crossing into adult content. Use absurd scenarios and escalated ridiculousness that would make people laugh at the sheer outrageousness. PG-13 level humor is acceptable - include mild innuendo, embarrassing situations, and wildly absurd claims.`;
+            
+        case HUMOR_MODES.OBSCENE:
+            return `${basePrompt} Create adult-level crude humor with no content restrictions. Include swear words, NSFW scenarios, bar-room humor, and controversial content. Make it hilariously inappropriate for people who appreciate adult humor and crude language. Use explicit language, sexual innuendo, and shocking scenarios.`;
+            
+        default:
+            return `${basePrompt} Create facts that are absurd enough to be funny but believable enough to cause initial confusion.`;
+    }
+}
+
+function createPrompt(context, paragraphText, humorMode) {
     const { subject, pageType, language } = context;
     
     let prompt = `Generate a single, amusing fake fact about "${subject}"`;
@@ -612,13 +648,44 @@ function createPrompt(context, paragraphText) {
             prompt += `. Create an entertaining and surprising detail`;
     }
 
+    // Add mode-specific requirements
+    let modeRequirements = "";
+    switch (humorMode) {
+        case HUMOR_MODES.GOOFY:
+            modeRequirements = `
+- Keep it completely family-friendly and workplace-safe
+- Use silly, whimsical scenarios and innocent humor
+- Make it cute and harmless rather than shocking
+- Focus on playful quirks and endearing characteristics`;
+            break;
+            
+        case HUMOR_MODES.OUTRAGEOUS:
+            modeRequirements = `
+- Make it embarrassing, bizarre, and ridiculously absurd
+- Use outrageous scenarios that would make people laugh at the sheer ridiculousness
+- Push boundaries but keep it PG-13 (no explicit adult content)
+- Include mild innuendo and wildly absurd claims`;
+            break;
+            
+        case HUMOR_MODES.OBSCENE:
+            modeRequirements = `
+- Use adult humor, crude language, and NSFW scenarios
+- Include swear words and inappropriate content for adult audiences
+- Make it hilariously inappropriate and shocking
+- Use explicit language and sexual references`;
+            break;
+            
+        default:
+            modeRequirements = `
+- Make it family-friendly and harmless`;
+    }
+
     prompt += `
 
 Requirements:
 - Write in Wikipedia style (encyclopedic, matter-of-fact tone)
 - Make it believable at first but obviously absurd when examined
-- Keep it to 1-2 sentences maximum
-- Make it family-friendly and harmless
+- Keep it to 1-2 sentences maximum${modeRequirements}
 - Don't mention this is fake
 - Start naturally (no "Did you know")`;
 
@@ -633,10 +700,10 @@ function cleanFact(fact) {
         .trim();
 }
 
-function createCacheKey(context, paragraphText) {
+function createCacheKey(context, paragraphText, humorMode) {
     const subjectKey = context.subject.toLowerCase().replace(/\s+/g, '_');
     const textHash = simpleHash(paragraphText.substring(0, 50));
-    return `${subjectKey}_${textHash}`;
+    return `${subjectKey}_${humorMode}_${textHash}`;
 }
 
 function simpleHash(text) {
@@ -700,15 +767,31 @@ function getPageStats() {
  * Listen for storage changes
  */
 chrome.storage.onChanged.addListener((changes, namespace) => {
-    if (namespace === 'sync' && changes[STORAGE_KEYS.PRANK_ENABLED]) {
-        const newValue = changes[STORAGE_KEYS.PRANK_ENABLED].newValue;
-        console.log('Prank status changed to:', newValue ? 'ENABLED' : 'DISABLED');
+    if (namespace === 'sync') {
+        if (changes[STORAGE_KEYS.PRANK_ENABLED]) {
+            const newValue = changes[STORAGE_KEYS.PRANK_ENABLED].newValue;
+            console.log('Prank status changed to:', newValue ? 'ENABLED' : 'DISABLED');
+            
+            if (newValue) {
+                console.log('Prank enabled - starting page processing...');
+                setTimeout(processPage, 500);
+            } else {
+                console.log('Prank disabled - page will reload');
+            }
+        }
         
-        if (newValue) {
-            console.log('Prank enabled - starting page processing...');
-            setTimeout(processPage, 500);
-        } else {
-            console.log('Prank disabled - page will reload');
+        if (changes[STORAGE_KEYS.HUMOR_MODE]) {
+            const newMode = changes[STORAGE_KEYS.HUMOR_MODE].newValue;
+            console.log('Humor mode changed to:', newMode);
+            
+            // Only reprocess if prank is currently enabled
+            chrome.storage.sync.get([STORAGE_KEYS.PRANK_ENABLED], (result) => {
+                const isEnabled = result[STORAGE_KEYS.PRANK_ENABLED] || false;
+                if (isEnabled) {
+                    console.log('Humor mode changed while prank active - reprocessing page...');
+                    setTimeout(processPage, 500);
+                }
+            });
         }
     }
 });

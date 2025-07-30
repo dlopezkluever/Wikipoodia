@@ -3,8 +3,41 @@
 
 // Constants (duplicated from utils/constants.js for popup context)
 const STORAGE_KEYS = {
-    PRANK_ENABLED: 'prankEnabled'
+    PRANK_ENABLED: 'prankEnabled',
+    HUMOR_MODE: 'humorMode'
 };
+
+const HUMOR_MODES = {
+    GOOFY: 'goofy',
+    OUTRAGEOUS: 'outrageous', 
+    OBSCENE: 'obscene'
+};
+
+const HUMOR_MODE_CONFIG = {
+    [HUMOR_MODES.GOOFY]: {
+        name: 'Goofy',
+        description: 'Family-friendly fun',
+        icon: '🟢',
+        rating: 'PG',
+        color: '#28a745'
+    },
+    [HUMOR_MODES.OUTRAGEOUS]: {
+        name: 'Outrageous', 
+        description: 'Embarrassing & bizarre',
+        icon: '🟡',
+        rating: 'PG-13',
+        color: '#ffc107'
+    },
+    [HUMOR_MODES.OBSCENE]: {
+        name: 'Obscene',
+        description: 'Adult humor & crude language', 
+        icon: '🔴',
+        rating: 'R',
+        color: '#dc3545'
+    }
+};
+
+const DEFAULT_HUMOR_MODE = HUMOR_MODES.GOOFY;
 
 const SUCCESS_MESSAGES = {
     PRANK_ENABLED: 'Prank activated! Visit Wikipedia to see it in action.',
@@ -20,6 +53,8 @@ let prankToggle;
 let statusText;
 let statusDisplay;
 let feedbackElement;
+let currentModeText;
+let humorModeRadios;
 
 // Initialize popup when DOM is loaded
 document.addEventListener('DOMContentLoaded', async () => {
@@ -29,6 +64,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         statusText = document.getElementById('status-text');
         statusDisplay = document.querySelector('.status-display');
         feedbackElement = document.getElementById('feedback');
+        currentModeText = document.getElementById('current-mode');
+        humorModeRadios = document.querySelectorAll('input[name="humor-mode"]');
         
         // Load current state
         await loadCurrentState();
@@ -44,17 +81,23 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 /**
- * Load the current prank state from storage
+ * Load the current prank state and humor mode from storage
  */
 async function loadCurrentState() {
     try {
-        const result = await chrome.storage.sync.get([STORAGE_KEYS.PRANK_ENABLED]);
+        const result = await chrome.storage.sync.get([
+            STORAGE_KEYS.PRANK_ENABLED,
+            STORAGE_KEYS.HUMOR_MODE
+        ]);
+        
         const isEnabled = result[STORAGE_KEYS.PRANK_ENABLED] || false;
+        const humorMode = result[STORAGE_KEYS.HUMOR_MODE] || DEFAULT_HUMOR_MODE;
         
         // Update UI to reflect current state
         updateUIState(isEnabled);
+        updateHumorModeUI(humorMode);
         
-        console.log('Current prank state loaded:', isEnabled);
+        console.log('Current state loaded:', { prankEnabled: isEnabled, humorMode });
     } catch (error) {
         console.error('Failed to load current state:', error);
         showError(ERROR_MESSAGES.STORAGE_ERROR);
@@ -69,11 +112,23 @@ function setupEventListeners() {
         prankToggle.addEventListener('change', handleToggleChange);
     }
     
+    // Set up humor mode radio button listeners
+    humorModeRadios.forEach(radio => {
+        radio.addEventListener('change', handleHumorModeChange);
+    });
+    
     // Listen for storage changes from other parts of the extension
     chrome.storage.onChanged.addListener((changes, namespace) => {
-        if (namespace === 'sync' && changes[STORAGE_KEYS.PRANK_ENABLED]) {
-            const newValue = changes[STORAGE_KEYS.PRANK_ENABLED].newValue;
-            updateUIState(newValue);
+        if (namespace === 'sync') {
+            if (changes[STORAGE_KEYS.PRANK_ENABLED]) {
+                const newValue = changes[STORAGE_KEYS.PRANK_ENABLED].newValue;
+                updateUIState(newValue);
+            }
+            
+            if (changes[STORAGE_KEYS.HUMOR_MODE]) {
+                const newMode = changes[STORAGE_KEYS.HUMOR_MODE].newValue;
+                updateHumorModeUI(newMode);
+            }
         }
     });
 }
@@ -122,6 +177,59 @@ async function handleToggleChange(event) {
         setTimeout(() => {
             hideFeedback();
         }, 3000);
+    }
+}
+
+/**
+ * Handle humor mode changes
+ */
+async function handleHumorModeChange(event) {
+    const selectedMode = event.target.value;
+    
+    try {
+        // Save new humor mode to storage
+        await chrome.storage.sync.set({
+            [STORAGE_KEYS.HUMOR_MODE]: selectedMode
+        });
+        
+        // Update UI
+        updateHumorModeUI(selectedMode);
+        
+        // Show success feedback
+        const modeConfig = HUMOR_MODE_CONFIG[selectedMode];
+        showFeedback(`Humor mode changed to ${modeConfig.name}`, 'success');
+        
+        console.log('Humor mode updated to:', selectedMode);
+        
+        // Hide feedback after delay
+        setTimeout(() => {
+            hideFeedback();
+        }, 2000);
+        
+    } catch (error) {
+        console.error('Failed to update humor mode:', error);
+        showError('Failed to save humor mode preference');
+    }
+}
+
+/**
+ * Update humor mode UI elements
+ */
+function updateHumorModeUI(humorMode) {
+    // Update radio button selection
+    humorModeRadios.forEach(radio => {
+        radio.checked = radio.value === humorMode;
+    });
+    
+    // Update current mode display
+    if (currentModeText) {
+        const modeConfig = HUMOR_MODE_CONFIG[humorMode];
+        if (modeConfig) {
+            currentModeText.textContent = modeConfig.name;
+            currentModeText.style.color = modeConfig.color;
+            currentModeText.style.borderColor = `${modeConfig.color}33`;
+            currentModeText.style.backgroundColor = `${modeConfig.color}1a`;
+        }
     }
 }
 

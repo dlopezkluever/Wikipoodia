@@ -1,14 +1,48 @@
 // Storage key definitions
 export const STORAGE_KEYS = {
     PRANK_ENABLED: 'prankEnabled',
+    HUMOR_MODE: 'humorMode',
     CACHE_PREFIX: 'factCache_',
     LAST_CLEANUP: 'lastCacheCleanup'
 };
 
+// Humor mode definitions
+export const HUMOR_MODES = {
+    GOOFY: 'goofy',
+    OUTRAGEOUS: 'outrageous', 
+    OBSCENE: 'obscene'
+};
+
+export const HUMOR_MODE_CONFIG = {
+    [HUMOR_MODES.GOOFY]: {
+        name: 'Goofy',
+        description: 'Family-friendly fun',
+        icon: '🟢',
+        rating: 'PG',
+        color: '#28a745'
+    },
+    [HUMOR_MODES.OUTRAGEOUS]: {
+        name: 'Outrageous', 
+        description: 'Embarrassing & bizarre',
+        icon: '🟡',
+        rating: 'PG-13',
+        color: '#ffc107'
+    },
+    [HUMOR_MODES.OBSCENE]: {
+        name: 'Obscene',
+        description: 'Adult humor & crude language', 
+        icon: '🔴',
+        rating: 'R',
+        color: '#dc3545'
+    }
+};
+
+export const DEFAULT_HUMOR_MODE = HUMOR_MODES.GOOFY;
+
 // API configuration
 export const API_CONFIG = {
     OPENAI_ENDPOINT: 'https://api.openai.com/v1/chat/completions',
-    API_KEY: 'YOUR_OPENAI_API_KEY_HERE',
+    // API_KEY: 'YOUR_OPENAI_API_KEY_HERE',
     MODEL: 'gpt-3.5-turbo',
     MAX_TOKENS: 150,
     TEMPERATURE: 0.9
