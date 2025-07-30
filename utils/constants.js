@@ -10,7 +10,9 @@ export const STORAGE_KEYS = {
 export const HUMOR_MODES = {
     GOOFY: 'goofy',
     OUTRAGEOUS: 'outrageous', 
-    OBSCENE: 'obscene'
+    OBSCENE: 'obscene',
+    UTTER_MISINFO: 'utter_misinfo',
+    EVIL: 'evil'
 };
 
 export const HUMOR_MODE_CONFIG = {
@@ -34,6 +36,20 @@ export const HUMOR_MODE_CONFIG = {
         icon: '🔴',
         rating: 'R',
         color: '#dc3545'
+    },
+    [HUMOR_MODES.UTTER_MISINFO]: {
+        name: 'Utter Misinfo',
+        description: 'Complete opposite facts',
+        icon: '🔄',
+        rating: 'FLIP',
+        color: '#6f42c1'
+    },
+    [HUMOR_MODES.EVIL]: {
+        name: 'Evil',
+        description: 'Dark & sinister content',
+        icon: '💀',
+        rating: 'DARK',
+        color: '#343a40'
     }
 };
 
@@ -42,7 +58,7 @@ export const DEFAULT_HUMOR_MODE = HUMOR_MODES.GOOFY;
 // API configuration
 export const API_CONFIG = {
     OPENAI_ENDPOINT: 'https://api.openai.com/v1/chat/completions',
-    API_KEY: 'YOUR_OPENAI_API_KEY_HERE',
+    API_KEY: 'Enter your OpenAI API key here',
     MODEL: 'gpt-3.5-turbo',
     MAX_TOKENS: 150,
     TEMPERATURE: 0.9

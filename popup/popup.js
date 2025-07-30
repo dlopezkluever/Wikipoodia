@@ -10,7 +10,9 @@ const STORAGE_KEYS = {
 const HUMOR_MODES = {
     GOOFY: 'goofy',
     OUTRAGEOUS: 'outrageous', 
-    OBSCENE: 'obscene'
+    OBSCENE: 'obscene',
+    UTTER_MISINFO: 'utter_misinfo',
+    EVIL: 'evil'
 };
 
 const HUMOR_MODE_CONFIG = {
@@ -34,6 +36,20 @@ const HUMOR_MODE_CONFIG = {
         icon: '🔴',
         rating: 'R',
         color: '#dc3545'
+    },
+    [HUMOR_MODES.UTTER_MISINFO]: {
+        name: 'Utter Misinfo',
+        description: 'Complete opposite facts',
+        icon: '🔄',
+        rating: 'FLIP',
+        color: '#6f42c1'
+    },
+    [HUMOR_MODES.EVIL]: {
+        name: 'Evil',
+        description: 'Dark & sinister content',
+        icon: '💀',
+        rating: 'DARK',
+        color: '#343a40'
     }
 };
 
@@ -199,7 +215,7 @@ async function handleHumorModeChange(event) {
         const modeConfig = HUMOR_MODE_CONFIG[selectedMode];
         showFeedback(`Humor mode changed to ${modeConfig.name}`, 'success');
         
-        console.log('Humor mode updated to:', selectedMode);
+        console.log('Humor mode updated to:', selectedMode, '(' + modeConfig.name + ')');
         
         // Hide feedback after delay
         setTimeout(() => {

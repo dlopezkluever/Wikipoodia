@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Wikipedia Troll",
+  "name": "Wikipoodia",
   "version": "1.0.0",
   "description": "Inject hilarious fake facts into Wikipedia articles",
   "permissions": [

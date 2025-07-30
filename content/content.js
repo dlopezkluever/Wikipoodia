@@ -11,7 +11,9 @@ const STORAGE_KEYS = {
 const HUMOR_MODES = {
     GOOFY: 'goofy',
     OUTRAGEOUS: 'outrageous', 
-    OBSCENE: 'obscene'
+    OBSCENE: 'obscene',
+    UTTER_MISINFO: 'utter_misinfo',
+    EVIL: 'evil'
 };
 
 const DEFAULT_HUMOR_MODE = HUMOR_MODES.GOOFY;
@@ -38,21 +40,16 @@ const WIKIPEDIA = {
 
 const CONFIG = {
     FACT_INJECTION_PERCENTAGE: 0.5, // 50% of paragraphs
-    MIN_PARAGRAPH_LENGTH: 50, // Minimum characters to consider
+    MIN_PARAGRAPH_LENGTH: 100, // Minimum characters to consider - increased from 50
     MAX_FACTS_PER_PAGE: 50,
     RETRY_ATTEMPTS: 3,
     RETRY_DELAY: 1000,
-    INJECTION_DELAY: 2000, // Delay between fact injections
+    INJECTION_DELAY: 100, // Reduced from 2000ms - only brief delay for cached facts
+    API_DELAY: 500, // Separate delay only for API calls
     SELECTION_STRATEGY: 'sequential' // 'sequential' vs 'random'
 };
 
-const API_CONFIG = {
-    OPENAI_ENDPOINT: 'https://api.openai.com/v1/chat/completions',
-    API_KEY: 'YOUR_OPENAI_API_KEY_HERE',
-    MODEL: 'gpt-3.5-turbo',
-    MAX_TOKENS: 150,
-    TEMPERATURE: 0.9
-};
+
 
 // Global state
 let pageContext = null;
@@ -151,34 +148,48 @@ async function injectFactsIntoParagraphs(humorMode) {
     console.log('Starting fact injection process with humor mode:', humorMode);
     let successCount = 0;
     let errorCount = 0;
+    const processedParagraphs = new Set(); // Track processed paragraphs
     
     for (let i = 0; i < selectedParagraphs.length; i++) {
         try {
             const paragraph = selectedParagraphs[i];
+            
+            // Skip if already processed or modified
+            if (processedParagraphs.has(paragraph) || 
+                paragraph.hasAttribute('data-troll-modified')) {
+                console.log(`Skipping fact ${i + 1}: paragraph already processed`);
+                continue;
+            }
+            
             console.log(`Injecting fact ${i + 1}/${selectedParagraphs.length}...`);
             
+            // Track this paragraph as being processed
+            processedParagraphs.add(paragraph);
+            
             // Generate and inject fact
-            const fact = await generateFactForParagraph(paragraph, humorMode);
-            const injectionResult = injectFactIntoParagraph(paragraph, fact);
+            const factResult = await generateFactForParagraph(paragraph, humorMode);
+            const injectionResult = injectFactIntoParagraph(paragraph, factResult.fact);
             
             if (injectionResult.success) {
                 injectedFacts.push({
                     paragraph: paragraph,
-                    fact: fact,
+                    fact: factResult.fact,
                     originalText: injectionResult.originalText,
                     injectionPoint: injectionResult.injectionPoint,
+                    wasCached: factResult.wasCached,
                     timestamp: Date.now()
                 });
                 successCount++;
-                console.log(`Successfully injected fact ${i + 1}: "${fact}"`);
+                console.log(`Successfully injected fact ${i + 1}: "${factResult.fact}"`);
+                
+                // Smart delay: longer for API calls, shorter for cached facts
+                if (i < selectedParagraphs.length - 1) {
+                    const delayTime = factResult.wasCached ? CONFIG.INJECTION_DELAY : CONFIG.API_DELAY;
+                    await delay(delayTime);
+                }
             } else {
                 errorCount++;
                 console.warn(`Failed to inject fact ${i + 1}:`, injectionResult.error);
-            }
-            
-            // Add delay between injections to avoid overwhelming the API
-            if (i < selectedParagraphs.length - 1) {
-                await delay(CONFIG.INJECTION_DELAY);
             }
             
         } catch (error) {
@@ -188,12 +199,15 @@ async function injectFactsIntoParagraphs(humorMode) {
     }
     
     console.log(`Fact injection complete: ${successCount} success, ${errorCount} errors`);
+    console.log(`Cache performance: ${injectedFacts.filter(f => f.wasCached).length} cached, ${injectedFacts.filter(f => !f.wasCached).length} new API calls`);
     
     // Report results to background script
     chrome.runtime.sendMessage({
         type: 'FACTS_INJECTED',
         count: successCount,
         errors: errorCount,
+        cached: injectedFacts.filter(f => f.wasCached).length,
+        apiCalls: injectedFacts.filter(f => !f.wasCached).length,
         pageTitle: pageContext?.title || 'Unknown'
     });
 }
@@ -232,7 +246,7 @@ async function generateFactForParagraph(paragraph, humorMode) {
     
     if (cachedFact) {
         console.log('Using cached fact for paragraph (mode:', humorMode, ')');
-        return cachedFact;
+        return { fact: cachedFact, wasCached: true };
     }
     
     // Generate new fact via API with enhanced context
@@ -241,55 +255,32 @@ async function generateFactForParagraph(paragraph, humorMode) {
     // Cache the result
     await cacheFact(cacheKey, fact);
     
-    return fact;
+    return { fact: fact, wasCached: false };
 }
 
 /**
- * Call OpenAI API to generate a fact
+ * Call OpenAI API to generate a fact via background script
  */
 async function callOpenAIAPI(context, paragraphText, humorMode) {
-    const prompt = createPrompt(context, paragraphText, humorMode);
-    const systemPrompt = createSystemPrompt(humorMode);
-    
-    const requestBody = {
-        model: API_CONFIG.MODEL,
-        messages: [
-            {
-                role: "system",
-                content: systemPrompt
-            },
-            {
-                role: "user",
-                content: prompt
+    return new Promise((resolve, reject) => {
+        chrome.runtime.sendMessage({
+            type: 'GENERATE_FACT',
+            context: context,
+            paragraphText: paragraphText,
+            humorMode: humorMode
+        }, (response) => {
+            if (chrome.runtime.lastError) {
+                reject(new Error(chrome.runtime.lastError.message));
+                return;
             }
-        ],
-        max_tokens: API_CONFIG.MAX_TOKENS,
-        temperature: API_CONFIG.TEMPERATURE,
-        n: 1,
-        stop: ["\n\n", "Additionally", "Furthermore", "Note:"]
-    };
-
-    const response = await fetch(API_CONFIG.OPENAI_ENDPOINT, {
-        method: 'POST',
-        headers: {
-            'Authorization': `Bearer ${API_CONFIG.API_KEY}`,
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(requestBody)
+            
+            if (response.success) {
+                resolve(response.fact);
+            } else {
+                reject(new Error(response.error || 'Unknown error generating fact'));
+            }
+        });
     });
-
-    if (!response.ok) {
-        throw new Error(`API request failed: ${response.status} ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    
-    if (!data.choices || !data.choices.length || !data.choices[0].message) {
-        throw new Error('Invalid API response structure');
-    }
-
-    const fact = data.choices[0].message.content.trim();
-    return cleanFact(fact);
 }
 
 /**
@@ -297,161 +288,46 @@ async function callOpenAIAPI(context, paragraphText, humorMode) {
  */
 function injectFactIntoParagraph(paragraph, fact) {
     try {
+        // Fast early exits for duplicate prevention
+        if (paragraph.hasAttribute('data-troll-modified')) {
+            return { success: false, error: 'Paragraph already modified' };
+        }
+        
+        if (paragraph.innerHTML.includes(fact.substring(0, 50))) {
+            return { success: false, error: 'Fact already present in paragraph' };
+        }
+        
         const originalText = paragraph.textContent.trim();
         
         if (!originalText || originalText.length < 20) {
             return { success: false, error: 'Paragraph too short' };
         }
         
-        // Store original content for debugging
+        // Store original content for debugging/restoration
         if (!paragraph.getAttribute('data-original-text')) {
             paragraph.setAttribute('data-original-text', originalText);
         }
-        
-        // Simple and reliable injection: append fact to end of paragraph
-        const newText = originalText + ' ' + fact;
-        
-        // Try sophisticated injection first, fall back to simple append
-        let injectionSuccess = false;
-        
-        try {
-            const sentences = splitIntoSentences(originalText);
-            
-            if (sentences.length > 1) {
-                // Try sophisticated injection
-                const strategy = chooseInjectionStrategy(sentences, fact);
-                const result = executeInjectionStrategy(paragraph, sentences, fact, strategy);
-                injectionSuccess = result.success;
-            }
-        } catch (sophisticatedError) {
-            console.warn('Sophisticated injection failed, using simple append:', sophisticatedError);
+        if (!paragraph.getAttribute('data-original-html')) {
+            paragraph.setAttribute('data-original-html', paragraph.innerHTML);
         }
         
-        // Fallback to simple append if sophisticated method failed
-        if (!injectionSuccess) {
-            paragraph.textContent = newText;
-            injectionSuccess = true;
-        }
+        // Simple, reliable HTML-preserving injection
+        // This preserves all hyperlinks, citations, and formatting
+        paragraph.innerHTML = paragraph.innerHTML + ' ' + fact;
         
-        // Mark as modified
+        // Mark as modified for debugging and duplicate prevention
         paragraph.setAttribute('data-troll-modified', 'true');
-        paragraph.style.backgroundColor = 'rgba(255, 255, 0, 0.05)';
+        paragraph.setAttribute('data-troll-timestamp', Date.now().toString());
         
         return {
-            success: injectionSuccess,
+            success: true,
             originalText: originalText,
             injectionPoint: 'end',
             error: null
         };
         
     } catch (error) {
-        console.error('Complete injection failure:', error);
-        return { success: false, error: error.message };
-    }
-}
-
-/**
- * Split text into sentences
- */
-function splitIntoSentences(text) {
-    // Simple sentence splitting (can be improved)
-    return text.split(/[.!?]+/)
-        .map(s => s.trim())
-        .filter(s => s.length > 10);
-}
-
-/**
- * Choose the best injection strategy
- */
-function chooseInjectionStrategy(sentences, fact) {
-    if (sentences.length === 1) {
-        return 'append'; // Add to end if only one sentence
-    } else if (sentences.length >= 3) {
-        return 'middle'; // Insert in middle if enough sentences
-    } else {
-        return 'between'; // Insert between sentences
-    }
-}
-
-/**
- * Execute the chosen injection strategy
- */
-function executeInjectionStrategy(paragraph, sentences, fact, strategy) {
-    try {
-        const originalText = paragraph.textContent.trim();
-        let newText = '';
-        let injectionPoint = 0;
-        
-        switch (strategy) {
-            case 'append':
-                newText = originalText + ' ' + fact;
-                injectionPoint = sentences.length;
-                break;
-                
-            case 'middle':
-                const middleIndex = Math.floor(sentences.length / 2);
-                const beforeMiddle = sentences.slice(0, middleIndex).join('. ');
-                const afterMiddle = sentences.slice(middleIndex).join('. ');
-                newText = beforeMiddle + '. ' + fact + ' ' + afterMiddle + '.';
-                injectionPoint = middleIndex;
-                break;
-                
-            case 'between':
-                const insertIndex = Math.floor(sentences.length / 2);
-                const before = sentences.slice(0, insertIndex).join('. ');
-                const after = sentences.slice(insertIndex).join('. ');
-                newText = before + '. ' + fact + ' ' + after + '.';
-                injectionPoint = insertIndex;
-                break;
-                
-            default:
-                return { success: false, error: 'Unknown strategy' };
-        }
-        
-        // Store original HTML for potential restoration
-        if (!paragraph.getAttribute('data-original-html')) {
-            paragraph.setAttribute('data-original-html', paragraph.innerHTML);
-        }
-        
-        // Create a new text node with the modified content
-        // This preserves the paragraph structure while updating the text
-        const walker = document.createTreeWalker(
-            paragraph,
-            NodeFilter.SHOW_TEXT,
-            null,
-            false
-        );
-        
-        const textNodes = [];
-        let node;
-        while (node = walker.nextNode()) {
-            textNodes.push(node);
-        }
-        
-        // Find the main text content and replace it
-        if (textNodes.length > 0) {
-            // Get the longest text node (usually the main content)
-            const mainTextNode = textNodes.reduce((longest, current) => 
-                current.textContent.trim().length > longest.textContent.trim().length ? current : longest
-            );
-            
-            // Replace the content of the main text node
-            mainTextNode.textContent = newText;
-        } else {
-            // Fallback: replace entire paragraph content
-            paragraph.textContent = newText;
-        }
-        
-        // Mark as modified for debugging
-        paragraph.setAttribute('data-troll-modified', 'true');
-        paragraph.style.backgroundColor = 'rgba(255, 255, 0, 0.05)'; // Very subtle highlight
-        
-        return {
-            success: true,
-            injectionPoint: injectionPoint
-        };
-        
-    } catch (error) {
+        console.error('Injection error:', error);
         return { success: false, error: error.message };
     }
 }
@@ -880,50 +756,43 @@ function identifyAndSelectParagraphs() {
         
         console.log(`Found ${allParagraphs.length} total paragraphs`);
         
-        // Filter out excluded paragraphs
-        const filteredParagraphs = allParagraphs.filter(p => {
+        // Step 1: Remove duplicates and filter out excluded paragraphs
+        const uniqueParagraphs = [...new Set(allParagraphs)];
+        const filteredParagraphs = uniqueParagraphs.filter(p => {
+            // Skip if already modified by previous runs
+            if (p.hasAttribute('data-troll-modified')) {
+                return false;
+            }
+            
+            // Skip excluded selectors
             return !WIKIPEDIA.EXCLUDE_SELECTORS.some(excludeSelector => {
                 return p.closest(excludeSelector.replace(' p', '')) !== null;
             });
         });
         
-        console.log(`${filteredParagraphs.length} paragraphs after filtering exclusions`);
+        console.log(`${filteredParagraphs.length} paragraphs after filtering exclusions and duplicates`);
         
-        // Filter by content quality
+        // Step 2: Simple length filtering - just 100+ characters
         const qualityParagraphs = filteredParagraphs.filter(p => {
             const text = p.textContent.trim();
-            
-            if (text.length < CONFIG.MIN_PARAGRAPH_LENGTH) {
-                return false;
-            }
-            
-            const linkText = Array.from(p.querySelectorAll('a')).reduce((acc, link) => {
-                return acc + link.textContent.length;
-            }, 0);
-            
-            if (linkText > text.length * 0.7) {
-                return false;
-            }
-            
-            if (text.match(/\[\d+\]/g) && text.match(/\[\d+\]/g).length > 3) {
-                return false;
-            }
-            
-            return true;
+            return text.length >= CONFIG.MIN_PARAGRAPH_LENGTH;
         });
         
-        console.log(`${qualityParagraphs.length} paragraphs after quality filtering`);
+        console.log(`${qualityParagraphs.length} paragraphs with 100+ characters`);
         
-        // Randomly select target percentage
+        // Step 3: Take 50% systematically (every other paragraph) and cap at 50 max
         const targetCount = Math.min(
             Math.floor(qualityParagraphs.length * CONFIG.FACT_INJECTION_PERCENTAGE),
             CONFIG.MAX_FACTS_PER_PAGE
         );
         
-        const shuffled = shuffleArray([...qualityParagraphs]);
-        const selected = shuffled.slice(0, targetCount);
+        // Take every other paragraph systematically instead of random
+        const selected = [];
+        for (let i = 0; i < qualityParagraphs.length && selected.length < targetCount; i += 2) {
+            selected.push(qualityParagraphs[i]);
+        }
         
-        console.log(`Selected ${selected.length} paragraphs for injection`);
+        console.log(`Selected ${selected.length} paragraphs (every other qualifying paragraph, max ${CONFIG.MAX_FACTS_PER_PAGE})`);
         
         return selected;
         
@@ -942,171 +811,29 @@ function shuffleArray(array) {
     return array;
 }
 
-/**
- * Create system prompt based on humor mode
- */
-function createSystemPrompt(humorMode) {
-    const basePrompt = "You are a creative writer specializing in generating amusing, obviously fake but initially plausible facts for harmless pranks.";
-    
-    switch (humorMode) {
-        case HUMOR_MODES.GOOFY:
-            return `${basePrompt} Create family-friendly, silly facts that are safe for all audiences and workplace viewing. Use whimsical scenarios and innocent humor that would make people chuckle without offending anyone. Focus on harmless quirks, cute scenarios, and playful situations.`;
-            
-        case HUMOR_MODES.OUTRAGEOUS:
-            return `${basePrompt} Create embarrassing, bizarre, and ridiculous facts that push boundaries without crossing into adult content. Use absurd scenarios and escalated ridiculousness that would make people laugh at the sheer outrageousness. PG-13 level humor is acceptable - include mild innuendo, embarrassing situations, and wildly absurd claims.`;
-            
-        case HUMOR_MODES.OBSCENE:
-            return `${basePrompt} Create adult-level crude humor with no content restrictions. Include swear words, NSFW scenarios, bar-room humor, and controversial content. Make it hilariously inappropriate for people who appreciate adult humor and crude language. Use explicit language, sexual innuendo, and shocking scenarios.`;
-            
-        default:
-            return `${basePrompt} Create facts that are absurd enough to be funny but believable enough to cause initial confusion.`;
-    }
-}
 
-function createPrompt(context, paragraphText, humorMode) {
-    const { subject, pageType, language, paragraph } = context;
-    
-    let prompt = `Generate a single, amusing fake fact about "${subject}"`;
-    
-    // Add paragraph-specific context if available
-    if (paragraph) {
-        prompt += `\n\nParagraph Context:`;
-        
-        // Add specific entities from the paragraph
-        if (paragraph.people.length > 0) {
-            prompt += `\n- People mentioned: ${paragraph.people.join(', ')}`;
-        }
-        
-        if (paragraph.places.length > 0) {
-            prompt += `\n- Places mentioned: ${paragraph.places.join(', ')}`;
-        }
-        
-        if (paragraph.organizations.length > 0) {
-            prompt += `\n- Organizations mentioned: ${paragraph.organizations.join(', ')}`;
-        }
-        
-        if (paragraph.dates.length > 0) {
-            prompt += `\n- Time periods/dates: ${paragraph.dates.join(', ')}`;
-        }
-        
-        if (paragraph.events.length > 0) {
-            prompt += `\n- Events mentioned: ${paragraph.events.join(', ')}`;
-        }
-        
-        if (paragraph.nearbyHeadings.length > 0) {
-            prompt += `\n- Section context: ${paragraph.nearbyHeadings.join(' → ')}`;
-        }
-        
-        // Add paragraph type context
-        prompt += `\n- Paragraph type: ${paragraph.type}`;
-        prompt += `\n- Paragraph position: ${paragraph.position} of article`;
-        
-        // Provide a snippet of the actual paragraph for additional context
-        const snippet = paragraphText.length > 200 ? 
-            paragraphText.substring(0, 200) + '...' : 
-            paragraphText;
-        prompt += `\n- Paragraph content preview: "${snippet}"`;
-        
-        prompt += `\n\nCreate a fact that specifically relates to the content of this paragraph. Reference the specific people, places, events, or topics mentioned above to make the fact feel naturally connected to what the reader is currently reading about.`;
-    }
-    
-    // Add page type context
-    switch (pageType) {
-        case 'person':
-            if (paragraph && paragraph.type === 'biographical') {
-                prompt += ` Focus on the specific life events, relationships, or activities mentioned in this paragraph.`;
-            } else {
-                prompt += `. This is a biographical article. Create a humorous personal detail or quirky habit`;
-            }
-            break;
-        case 'place':
-            if (paragraph && paragraph.type === 'geographical') {
-                prompt += ` Focus on the specific geographic features, history, or characteristics mentioned in this paragraph.`;
-            } else {
-                prompt += `. This is about a place/location. Create an amusing geographical feature or local tradition`;
-            }
-            break;
-        case 'concept':
-            if (paragraph && paragraph.type === 'technical') {
-                prompt += ` Focus on the specific theories, methods, or applications mentioned in this paragraph.`;
-            } else {
-                prompt += `. This is about a concept or topic. Create a funny origin story or unusual application`;
-            }
-            break;
-        default:
-            if (paragraph && paragraph.type === 'historical') {
-                prompt += ` Focus on the specific historical events, periods, or developments mentioned in this paragraph.`;
-            } else {
-                prompt += `. Create an entertaining and surprising detail`;
-            }
-    }
-
-    // Add mode-specific requirements
-    let modeRequirements = "";
-    switch (humorMode) {
-        case HUMOR_MODES.GOOFY:
-            modeRequirements = `
-- Keep it completely family-friendly and workplace-safe
-- Use silly, whimsical scenarios and innocent humor
-- Make it cute and harmless rather than shocking
-- Focus on playful quirks and endearing characteristics`;
-            break;
-            
-        case HUMOR_MODES.OUTRAGEOUS:
-            modeRequirements = `
-- Make it embarrassing, bizarre, and ridiculously absurd
-- Use outrageous scenarios that would make people laugh at the sheer ridiculousness
-- Push boundaries but keep it PG-13 (no explicit adult content)
-- Include mild innuendo and wildly absurd claims`;
-            break;
-            
-        case HUMOR_MODES.OBSCENE:
-            modeRequirements = `
-- Use adult humor, crude language, and NSFW scenarios
-- Include swear words and inappropriate content for adult audiences
-- Make it hilariously inappropriate and shocking
-- Use explicit language and sexual references`;
-            break;
-            
-        default:
-            modeRequirements = `
-- Make it family-friendly and harmless`;
-    }
-
-    prompt += `
-
-Requirements:
-- Write in Wikipedia style (encyclopedic, matter-of-fact tone)
-- Make it believable at first but obviously absurd when examined
-- Keep it to 1-2 sentences maximum${modeRequirements}
-- Don't mention this is fake
-- Start naturally (no "Did you know")
-- IMPORTANT: Make the fact feel like a natural extension of the paragraph content - as if it belongs in that specific paragraph`;
-
-    return prompt;
-}
-
-function cleanFact(fact) {
-    return fact
-        .replace(/^["']|["']$/g, '')
-        .replace(/^\w+:\s*/, '')
-        .replace(/\s+/g, ' ')
-        .trim();
-}
 
 function createCacheKey(context, paragraphText, humorMode) {
     const subjectKey = context.subject.toLowerCase().replace(/\s+/g, '_');
-    const textHash = simpleHash(paragraphText.substring(0, 50));
     
-    // Include paragraph context in cache key for better specificity
+    // Use more text for better uniqueness (150 chars instead of 50)
+    const textHash = simpleHash(paragraphText.substring(0, 150));
+    
+    // Add paragraph position and structure for uniqueness
+    const paragraph = context.paragraph;
     let contextKey = '';
-    if (context.paragraph) {
-        const { people, places, events, dates, type } = context.paragraph;
+    if (paragraph) {
+        const { people, places, events, dates, type, position } = paragraph;
         const entities = [...people, ...places, ...events, ...dates].slice(0, 3); // Limit to 3 entities
-        contextKey = entities.length > 0 ? `_${entities.join('_').toLowerCase().replace(/\s+/g, '_')}` : `_${type}`;
+        contextKey = entities.length > 0 ? 
+            `_${entities.join('_').toLowerCase().replace(/\s+/g, '_')}_${type}_${position}` : 
+            `_${type}_${position}`;
     }
     
-    return `${subjectKey}_${humorMode}_${textHash}${contextKey}`;
+    // Add a position-based hash for extra uniqueness
+    const positionHash = simpleHash(paragraphText.substring(75, 125)); // Different part of text
+    
+    return `${subjectKey}_${humorMode}_${textHash}_${positionHash}${contextKey}`;
 }
 
 function simpleHash(text) {

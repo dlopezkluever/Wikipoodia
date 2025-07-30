@@ -3,14 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Wikipedia Troll</title>
+    <title>Wikipoodia</title>
     <link rel="stylesheet" href="popup.css">
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <div class="icon">🎭</div>
-            <h1>Wikipedia Troll</h1>
+            <div class="icon">
+                <img src="../icons/icon-320.png" alt="Wikipoodia" class="header-icon">
+            </div>
+            <h1>Wikipoodia</h1>
         </div>
         
         <div class="content">
@@ -39,7 +41,6 @@
                     <label class="humor-mode-option goofy">
                         <input type="radio" name="humor-mode" value="goofy" id="mode-goofy" checked>
                         <div class="mode-content">
-                            <div class="mode-icon">🟢</div>
                             <div class="mode-info">
                                 <div class="mode-name">Goofy</div>
                                 <div class="mode-description">Family-friendly fun</div>
@@ -50,7 +51,6 @@
                     <label class="humor-mode-option outrageous">
                         <input type="radio" name="humor-mode" value="outrageous" id="mode-outrageous">
                         <div class="mode-content">
-                            <div class="mode-icon">🟡</div>
                             <div class="mode-info">
                                 <div class="mode-name">Outrageous</div>
                                 <div class="mode-description">Embarrassing & bizarre</div>
@@ -61,10 +61,29 @@
                     <label class="humor-mode-option obscene">
                         <input type="radio" name="humor-mode" value="obscene" id="mode-obscene">
                         <div class="mode-content">
-                            <div class="mode-icon">🔴</div>
                             <div class="mode-info">
                                 <div class="mode-name">Obscene</div>
                                 <div class="mode-description">Adult humor & crude language</div>
+                            </div>
+                        </div>
+                    </label>
+                    
+                    <label class="humor-mode-option utter-misinfo">
+                        <input type="radio" name="humor-mode" value="utter_misinfo" id="mode-utter-misinfo">
+                        <div class="mode-content">
+                            <div class="mode-info">
+                                <div class="mode-name">Utter Misinfo</div>
+                                <div class="mode-description">Complete opposite facts</div>
+                            </div>
+                        </div>
+                    </label>
+                    
+                    <label class="humor-mode-option evil">
+                        <input type="radio" name="humor-mode" value="evil" id="mode-evil">
+                        <div class="mode-content">
+                            <div class="mode-info">
+                                <div class="mode-name">Evil</div>
+                                <div class="mode-description">Dark & sinister content</div>
                             </div>
                         </div>
                     </label>
