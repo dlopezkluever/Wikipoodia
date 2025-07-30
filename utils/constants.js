@@ -16,12 +16,13 @@ export const API_CONFIG = {
 
 // Extension configuration
 export const CONFIG = {
-    FACT_INJECTION_PERCENTAGE: 0.3, // 30% of paragraphs
+    FACT_INJECTION_PERCENTAGE: 0.5, // 50% of paragraphs
     CACHE_EXPIRY_HOURS: 24,
-    MAX_FACTS_PER_PAGE: 10,
+    MAX_FACTS_PER_PAGE: 50,
     MIN_PARAGRAPH_LENGTH: 50, // Minimum characters in paragraph to consider
     RETRY_ATTEMPTS: 3,
-    RETRY_DELAY: 1000 // milliseconds
+    RETRY_DELAY: 1000, // milliseconds
+    SELECTION_STRATEGY: 'sequential' // 'sequential' vs 'random'
 };
 
 // Wikipedia selectors and patterns

@@ -177,7 +177,7 @@ This task list outlines the advanced enhancements to transform the Wikipedia Tro
 
 ---
 
-## **Phase 9: Wikipedia-Style Hyperlinks (Priority 4)**
+## **SKIP FOR NOW Phase 9: Wikipedia-Style Hyperlinks (Priority 4)**
 
 ### **Task 9.1: Link Detection System**
 **Priority**: Medium  
@@ -231,7 +231,7 @@ This task list outlines the advanced enhancements to transform the Wikipedia Tro
 
 ---
 
-## **Phase 10: Performance & Polish**
+## **SKIP FOR NOW: Phase 10: Performance & Polish**
 
 ### **Task 10.1: Performance Optimization**
 **Priority**: Medium  

@@ -28,12 +28,13 @@ const WIKIPEDIA = {
 };
 
 const CONFIG = {
-    FACT_INJECTION_PERCENTAGE: 0.3, // 30% of paragraphs
+    FACT_INJECTION_PERCENTAGE: 0.5, // 50% of paragraphs
     MIN_PARAGRAPH_LENGTH: 50, // Minimum characters to consider
-    MAX_FACTS_PER_PAGE: 10,
+    MAX_FACTS_PER_PAGE: 50,
     RETRY_ATTEMPTS: 3,
     RETRY_DELAY: 1000,
-    INJECTION_DELAY: 2000 // Delay between fact injections
+    INJECTION_DELAY: 2000, // Delay between fact injections
+    SELECTION_STRATEGY: 'sequential' // 'sequential' vs 'random'
 };
 
 const API_CONFIG = {
