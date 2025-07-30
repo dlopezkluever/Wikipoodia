@@ -1,0 +1,229 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: #333;
+    overflow: hidden;
+}
+
+.container {
+    width: 320px;
+    min-height: 400px;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    overflow: hidden;
+}
+
+.header {
+    background: linear-gradient(135deg, #4A90E2 0%, #357ABD 100%);
+    color: white;
+    padding: 20px;
+    text-align: center;
+    position: relative;
+}
+
+.icon {
+    font-size: 2.5rem;
+    margin-bottom: 8px;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.header h1 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.content {
+    padding: 24px;
+}
+
+.status-section {
+    margin-bottom: 24px;
+}
+
+.status-display {
+    background: #f8f9fa;
+    border: 2px solid #e9ecef;
+    border-radius: 8px;
+    padding: 16px;
+    text-align: center;
+}
+
+.status-label {
+    font-weight: 500;
+    color: #6c757d;
+    display: block;
+    margin-bottom: 4px;
+    font-size: 0.9rem;
+}
+
+.status-value {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #dc3545;
+    transition: color 0.3s ease;
+}
+
+.status-value.active {
+    color: #28a745;
+}
+
+.toggle-section {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 24px;
+    padding: 16px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border: 1px solid #dee2e6;
+}
+
+.toggle-label {
+    font-weight: 500;
+    color: #495057;
+}
+
+/* Toggle Switch Styles */
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 60px;
+    height: 32px;
+}
+
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #ccc;
+    transition: 0.3s;
+    border-radius: 32px;
+}
+
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 24px;
+    width: 24px;
+    left: 4px;
+    bottom: 4px;
+    background-color: white;
+    transition: 0.3s;
+    border-radius: 50%;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+input:checked + .slider {
+    background-color: #28a745;
+}
+
+input:focus + .slider {
+    box-shadow: 0 0 0 3px rgba(40, 167, 69, 0.25);
+}
+
+input:checked + .slider:before {
+    transform: translateX(28px);
+}
+
+.info-section {
+    margin-bottom: 20px;
+}
+
+.description {
+    font-size: 0.9rem;
+    color: #6c757d;
+    line-height: 1.5;
+    margin-bottom: 16px;
+    text-align: center;
+}
+
+.warning {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #fff3cd;
+    border: 1px solid #ffeaa7;
+    border-radius: 6px;
+    padding: 12px;
+    font-size: 0.85rem;
+}
+
+.warning-icon {
+    margin-right: 8px;
+    font-size: 1rem;
+}
+
+.warning-text {
+    color: #856404;
+    font-weight: 500;
+}
+
+.feedback {
+    padding: 12px;
+    border-radius: 6px;
+    text-align: center;
+    font-size: 0.9rem;
+    font-weight: 500;
+    transition: all 0.3s ease;
+}
+
+.feedback.success {
+    background: #d4edda;
+    border: 1px solid #c3e6cb;
+    color: #155724;
+}
+
+.feedback.error {
+    background: #f8d7da;
+    border: 1px solid #f5c6cb;
+    color: #721c24;
+}
+
+.feedback.hidden {
+    display: none;
+}
+
+/* Hover effects */
+.toggle-switch:hover .slider {
+    box-shadow: 0 0 0 3px rgba(40, 167, 69, 0.15);
+}
+
+.toggle-switch:hover .slider:before {
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* Animation for status changes */
+.status-value {
+    transition: all 0.3s ease;
+}
+
+.status-display {
+    transition: border-color 0.3s ease;
+}
+
+.status-display.active {
+    border-color: #28a745;
+    background: #f8fff9;
+}
+
+.status-display.inactive {
+    border-color: #dc3545;
+    background: #fff8f8;
+} 

@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wikipedia Troll</title>
+    <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="icon">🎭</div>
+            <h1>Wikipedia Troll</h1>
+        </div>
+        
+        <div class="content">
+            <div class="status-section">
+                <div class="status-display">
+                    <span class="status-label">Prank Status:</span>
+                    <span id="status-text" class="status-value">Off</span>
+                </div>
+            </div>
+            
+            <div class="toggle-section">
+                <label class="toggle-switch">
+                    <input type="checkbox" id="prank-toggle">
+                    <span class="slider"></span>
+                </label>
+                <span class="toggle-label">Enable Prank</span>
+            </div>
+            
+            <div class="info-section">
+                <p class="description">
+                    Inject hilarious AI-generated fake facts into Wikipedia articles for harmless pranking.
+                </p>
+                
+                <div class="warning">
+                    <span class="warning-icon">⚠️</span>
+                    <span class="warning-text">Use responsibly and with consent!</span>
+                </div>
+            </div>
+            
+            <div id="feedback" class="feedback hidden"></div>
+        </div>
+    </div>
+    
+    <script src="popup.js"></script>
+</body>
+</html> 
