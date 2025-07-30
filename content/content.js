@@ -48,7 +48,7 @@ const CONFIG = {
 
 const API_CONFIG = {
     OPENAI_ENDPOINT: 'https://api.openai.com/v1/chat/completions',
-    // API_KEY: 'YOUR_OPENAI_API_KEY_HERE',
+    API_KEY: 'YOUR_OPENAI_API_KEY_HERE',
     MODEL: 'gpt-3.5-turbo',
     MAX_TOKENS: 150,
     TEMPERATURE: 0.9
@@ -204,8 +204,30 @@ async function injectFactsIntoParagraphs(humorMode) {
 async function generateFactForParagraph(paragraph, humorMode) {
     const paragraphText = paragraph.textContent.trim();
     
-    // Check cache first (include humor mode in cache key)
-    const cacheKey = createCacheKey(pageContext, paragraphText, humorMode);
+    // Extract paragraph-specific context
+    const paragraphContext = extractParagraphContext(paragraph, paragraphText);
+    
+    // Debug logging for paragraph context
+    if (paragraphContext.people.length > 0 || paragraphContext.places.length > 0 || 
+        paragraphContext.events.length > 0 || paragraphContext.dates.length > 0) {
+        console.log('Paragraph context extracted:', {
+            type: paragraphContext.type,
+            people: paragraphContext.people,
+            places: paragraphContext.places,
+            events: paragraphContext.events,
+            dates: paragraphContext.dates,
+            headings: paragraphContext.nearbyHeadings
+        });
+    }
+    
+    // Create enhanced context combining page and paragraph information
+    const enhancedContext = {
+        ...pageContext,
+        paragraph: paragraphContext
+    };
+    
+    // Check cache first (include humor mode and paragraph context in cache key)
+    const cacheKey = createCacheKey(enhancedContext, paragraphText, humorMode);
     const cachedFact = await getCachedFact(cacheKey);
     
     if (cachedFact) {
@@ -213,8 +235,8 @@ async function generateFactForParagraph(paragraph, humorMode) {
         return cachedFact;
     }
     
-    // Generate new fact via API with humor mode
-    const fact = await callOpenAIAPI(pageContext, paragraphText, humorMode);
+    // Generate new fact via API with enhanced context
+    const fact = await callOpenAIAPI(enhancedContext, paragraphText, humorMode);
     
     // Cache the result
     await cacheFact(cacheKey, fact);
@@ -531,6 +553,318 @@ function cleanSubjectName(subject) {
 }
 
 /**
+ * Extract context information from a specific paragraph
+ */
+function extractParagraphContext(paragraph, paragraphText) {
+    try {
+        const context = {
+            // Basic content analysis
+            text: paragraphText,
+            length: paragraphText.length,
+            sentenceCount: paragraphText.split(/[.!?]+/).filter(s => s.trim().length > 5).length,
+            
+            // Extracted entities
+            people: [],
+            places: [],
+            organizations: [],
+            dates: [],
+            events: [],
+            topics: [],
+            
+            // Context clues
+            nearbyHeadings: [],
+            position: 'middle', // 'start', 'middle', 'end'
+            type: 'general' // 'biographical', 'geographical', 'historical', 'technical'
+        };
+        
+        // Determine paragraph position in article
+        context.position = determineParagraphPosition(paragraph);
+        
+        // Extract dates and years
+        context.dates = extractDates(paragraphText);
+        
+        // Extract proper nouns (potential people, places, organizations)
+        const properNouns = extractProperNouns(paragraphText);
+        context.people = filterPeople(properNouns, paragraphText);
+        context.places = filterPlaces(properNouns, paragraphText);
+        context.organizations = filterOrganizations(properNouns, paragraphText);
+        
+        // Extract events and activities
+        context.events = extractEvents(paragraphText);
+        
+        // Extract key topics and themes
+        context.topics = extractTopics(paragraphText);
+        
+        // Determine paragraph type
+        context.type = determineParagraphType(paragraphText, context);
+        
+        // Get nearby headings for additional context
+        context.nearbyHeadings = getNearbyHeadings(paragraph);
+        
+        return context;
+        
+    } catch (error) {
+        console.error('Error extracting paragraph context:', error);
+        return {
+            text: paragraphText,
+            length: paragraphText.length,
+            people: [],
+            places: [],
+            organizations: [],
+            dates: [],
+            events: [],
+            topics: [],
+            nearbyHeadings: [],
+            position: 'middle',
+            type: 'general'
+        };
+    }
+}
+
+/**
+ * Determine the position of a paragraph within the article
+ */
+function determineParagraphPosition(paragraph) {
+    const allParagraphs = Array.from(document.querySelectorAll('#mw-content-text p, .mw-parser-output p'));
+    const index = allParagraphs.indexOf(paragraph);
+    
+    if (index < 3) return 'start';
+    if (index > allParagraphs.length - 4) return 'end';
+    return 'middle';
+}
+
+/**
+ * Extract dates and years from text
+ */
+function extractDates(text) {
+    const dates = [];
+    
+    // Years (1800-2099)
+    const yearMatches = text.match(/\b(18|19|20)\d{2}\b/g);
+    if (yearMatches) {
+        dates.push(...yearMatches);
+    }
+    
+    // Date patterns
+    const datePatterns = [
+        /\b(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}\b/gi,
+        /\b\d{1,2}\s+(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}\b/gi,
+        /\b(early|mid|late)\s+(18|19|20)\d{2}s?\b/gi
+    ];
+    
+    datePatterns.forEach(pattern => {
+        const matches = text.match(pattern);
+        if (matches) {
+            dates.push(...matches);
+        }
+    });
+    
+    return [...new Set(dates)].slice(0, 3); // Limit to 3 unique dates
+}
+
+/**
+ * Extract proper nouns from text
+ */
+function extractProperNouns(text) {
+    // Simple regex to find capitalized words/phrases
+    const properNounPattern = /\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\b/g;
+    const matches = text.match(properNounPattern) || [];
+    
+    // Filter out common words and improve results
+    const filtered = matches.filter(noun => {
+        const lower = noun.toLowerCase();
+        return !['The', 'This', 'That', 'These', 'Those', 'Wikipedia', 'Article', 'Section'].includes(noun) &&
+               !lower.match(/^(after|before|during|since|until|while|when|where|which|who|whom|whose)$/) &&
+               noun.length > 2;
+    });
+    
+    return [...new Set(filtered)].slice(0, 10); // Limit to 10 unique proper nouns
+}
+
+/**
+ * Filter proper nouns that are likely people
+ */
+function filterPeople(properNouns, text) {
+    const people = [];
+    const personIndicators = [
+        'born', 'died', 'married', 'graduated', 'appointed', 'elected', 'served', 'became',
+        'president', 'minister', 'director', 'professor', 'doctor', 'senator', 'governor',
+        'said', 'stated', 'argued', 'believed', 'claimed', 'wrote', 'published'
+    ];
+    
+    properNouns.forEach(noun => {
+        // Check if the noun appears near person-related words
+        const contextWindow = 50;
+        const nounIndex = text.indexOf(noun);
+        if (nounIndex !== -1) {
+            const before = text.substring(Math.max(0, nounIndex - contextWindow), nounIndex).toLowerCase();
+            const after = text.substring(nounIndex + noun.length, nounIndex + noun.length + contextWindow).toLowerCase();
+            const context = before + ' ' + after;
+            
+            if (personIndicators.some(indicator => context.includes(indicator))) {
+                people.push(noun);
+            }
+        }
+    });
+    
+    return people.slice(0, 3); // Limit to 3 people
+}
+
+/**
+ * Filter proper nouns that are likely places
+ */
+function filterPlaces(properNouns, text) {
+    const places = [];
+    const placeIndicators = [
+        'city', 'town', 'village', 'county', 'state', 'country', 'region', 'province',
+        'located', 'situated', 'founded', 'built', 'established', 'capital',
+        'river', 'mountain', 'lake', 'ocean', 'sea', 'island', 'continent'
+    ];
+    
+    properNouns.forEach(noun => {
+        const contextWindow = 50;
+        const nounIndex = text.indexOf(noun);
+        if (nounIndex !== -1) {
+            const before = text.substring(Math.max(0, nounIndex - contextWindow), nounIndex).toLowerCase();
+            const after = text.substring(nounIndex + noun.length, nounIndex + noun.length + contextWindow).toLowerCase();
+            const context = before + ' ' + after;
+            
+            if (placeIndicators.some(indicator => context.includes(indicator))) {
+                places.push(noun);
+            }
+        }
+    });
+    
+    return places.slice(0, 3); // Limit to 3 places
+}
+
+/**
+ * Filter proper nouns that are likely organizations
+ */
+function filterOrganizations(properNouns, text) {
+    const organizations = [];
+    const orgIndicators = [
+        'company', 'corporation', 'organization', 'institution', 'university', 'college',
+        'department', 'ministry', 'agency', 'committee', 'council', 'association',
+        'society', 'foundation', 'institute', 'bureau', 'office', 'administration'
+    ];
+    
+    properNouns.forEach(noun => {
+        const contextWindow = 50;
+        const nounIndex = text.indexOf(noun);
+        if (nounIndex !== -1) {
+            const before = text.substring(Math.max(0, nounIndex - contextWindow), nounIndex).toLowerCase();
+            const after = text.substring(nounIndex + noun.length, nounIndex + noun.length + contextWindow).toLowerCase();
+            const context = before + ' ' + after;
+            
+            if (orgIndicators.some(indicator => context.includes(indicator))) {
+                organizations.push(noun);
+            }
+        }
+    });
+    
+    return organizations.slice(0, 3); // Limit to 3 organizations
+}
+
+/**
+ * Extract events and activities from text
+ */
+function extractEvents(text) {
+    const events = [];
+    const eventPatterns = [
+        // Wars and conflicts
+        /\b\w+\s+(?:War|Battle|Conflict|Revolution|Uprising)\b/gi,
+        // Agreements and treaties
+        /\b\w+\s+(?:Treaty|Agreement|Accord|Pact|Convention)\b/gi,
+        // Historical events
+        /\b\w+\s+(?:Crisis|Depression|Renaissance|Reformation|Enlightenment)\b/gi,
+        // Actions and processes
+        /\b(?:established|founded|created|built|launched|introduced|developed|invented)\s+\w+/gi
+    ];
+    
+    eventPatterns.forEach(pattern => {
+        const matches = text.match(pattern);
+        if (matches) {
+            events.push(...matches.map(match => match.trim()));
+        }
+    });
+    
+    return [...new Set(events)].slice(0, 3); // Limit to 3 unique events
+}
+
+/**
+ * Extract key topics and themes from text
+ */
+function extractTopics(text) {
+    const topics = [];
+    const topicKeywords = [
+        'economy', 'politics', 'culture', 'religion', 'education', 'military', 'science',
+        'technology', 'art', 'literature', 'music', 'philosophy', 'history', 'geography'
+    ];
+    
+    topicKeywords.forEach(topic => {
+        if (text.toLowerCase().includes(topic)) {
+            topics.push(topic);
+        }
+    });
+    
+    return topics.slice(0, 3); // Limit to 3 topics
+}
+
+/**
+ * Determine the type of paragraph based on content
+ */
+function determineParagraphType(text, context) {
+    const lowerText = text.toLowerCase();
+    
+    if (context.people.length > 0 && (lowerText.includes('born') || lowerText.includes('died'))) {
+        return 'biographical';
+    }
+    
+    if (context.places.length > 0 && (lowerText.includes('located') || lowerText.includes('situated'))) {
+        return 'geographical';
+    }
+    
+    if (context.dates.length > 0 && context.events.length > 0) {
+        return 'historical';
+    }
+    
+    if (lowerText.includes('research') || lowerText.includes('study') || lowerText.includes('theory')) {
+        return 'technical';
+    }
+    
+    return 'general';
+}
+
+/**
+ * Get nearby headings for additional context
+ */
+function getNearbyHeadings(paragraph) {
+    const headings = [];
+    let element = paragraph;
+    
+    // Look backwards for headings
+    while (element && headings.length < 2) {
+        element = element.previousElementSibling;
+        if (element && element.tagName && element.tagName.match(/^H[1-6]$/)) {
+            headings.unshift(element.textContent.trim());
+        }
+    }
+    
+    // Look forwards for headings
+    element = paragraph;
+    while (element && headings.length < 3) {
+        element = element.nextElementSibling;
+        if (element && element.tagName && element.tagName.match(/^H[1-6]$/)) {
+            headings.push(element.textContent.trim());
+            break; // Only get the next heading
+        }
+    }
+    
+    return headings;
+}
+
+/**
  * Identify and select paragraphs for fact injection
  */
 function identifyAndSelectParagraphs() {
@@ -630,22 +964,81 @@ function createSystemPrompt(humorMode) {
 }
 
 function createPrompt(context, paragraphText, humorMode) {
-    const { subject, pageType, language } = context;
+    const { subject, pageType, language, paragraph } = context;
     
     let prompt = `Generate a single, amusing fake fact about "${subject}"`;
     
+    // Add paragraph-specific context if available
+    if (paragraph) {
+        prompt += `\n\nParagraph Context:`;
+        
+        // Add specific entities from the paragraph
+        if (paragraph.people.length > 0) {
+            prompt += `\n- People mentioned: ${paragraph.people.join(', ')}`;
+        }
+        
+        if (paragraph.places.length > 0) {
+            prompt += `\n- Places mentioned: ${paragraph.places.join(', ')}`;
+        }
+        
+        if (paragraph.organizations.length > 0) {
+            prompt += `\n- Organizations mentioned: ${paragraph.organizations.join(', ')}`;
+        }
+        
+        if (paragraph.dates.length > 0) {
+            prompt += `\n- Time periods/dates: ${paragraph.dates.join(', ')}`;
+        }
+        
+        if (paragraph.events.length > 0) {
+            prompt += `\n- Events mentioned: ${paragraph.events.join(', ')}`;
+        }
+        
+        if (paragraph.nearbyHeadings.length > 0) {
+            prompt += `\n- Section context: ${paragraph.nearbyHeadings.join(' → ')}`;
+        }
+        
+        // Add paragraph type context
+        prompt += `\n- Paragraph type: ${paragraph.type}`;
+        prompt += `\n- Paragraph position: ${paragraph.position} of article`;
+        
+        // Provide a snippet of the actual paragraph for additional context
+        const snippet = paragraphText.length > 200 ? 
+            paragraphText.substring(0, 200) + '...' : 
+            paragraphText;
+        prompt += `\n- Paragraph content preview: "${snippet}"`;
+        
+        prompt += `\n\nCreate a fact that specifically relates to the content of this paragraph. Reference the specific people, places, events, or topics mentioned above to make the fact feel naturally connected to what the reader is currently reading about.`;
+    }
+    
+    // Add page type context
     switch (pageType) {
         case 'person':
-            prompt += `. This is a biographical article. Create a humorous personal detail or quirky habit`;
+            if (paragraph && paragraph.type === 'biographical') {
+                prompt += ` Focus on the specific life events, relationships, or activities mentioned in this paragraph.`;
+            } else {
+                prompt += `. This is a biographical article. Create a humorous personal detail or quirky habit`;
+            }
             break;
         case 'place':
-            prompt += `. This is about a place/location. Create an amusing geographical feature or local tradition`;
+            if (paragraph && paragraph.type === 'geographical') {
+                prompt += ` Focus on the specific geographic features, history, or characteristics mentioned in this paragraph.`;
+            } else {
+                prompt += `. This is about a place/location. Create an amusing geographical feature or local tradition`;
+            }
             break;
         case 'concept':
-            prompt += `. This is about a concept or topic. Create a funny origin story or unusual application`;
+            if (paragraph && paragraph.type === 'technical') {
+                prompt += ` Focus on the specific theories, methods, or applications mentioned in this paragraph.`;
+            } else {
+                prompt += `. This is about a concept or topic. Create a funny origin story or unusual application`;
+            }
             break;
         default:
-            prompt += `. Create an entertaining and surprising detail`;
+            if (paragraph && paragraph.type === 'historical') {
+                prompt += ` Focus on the specific historical events, periods, or developments mentioned in this paragraph.`;
+            } else {
+                prompt += `. Create an entertaining and surprising detail`;
+            }
     }
 
     // Add mode-specific requirements
@@ -687,7 +1080,8 @@ Requirements:
 - Make it believable at first but obviously absurd when examined
 - Keep it to 1-2 sentences maximum${modeRequirements}
 - Don't mention this is fake
-- Start naturally (no "Did you know")`;
+- Start naturally (no "Did you know")
+- IMPORTANT: Make the fact feel like a natural extension of the paragraph content - as if it belongs in that specific paragraph`;
 
     return prompt;
 }
@@ -703,7 +1097,16 @@ function cleanFact(fact) {
 function createCacheKey(context, paragraphText, humorMode) {
     const subjectKey = context.subject.toLowerCase().replace(/\s+/g, '_');
     const textHash = simpleHash(paragraphText.substring(0, 50));
-    return `${subjectKey}_${humorMode}_${textHash}`;
+    
+    // Include paragraph context in cache key for better specificity
+    let contextKey = '';
+    if (context.paragraph) {
+        const { people, places, events, dates, type } = context.paragraph;
+        const entities = [...people, ...places, ...events, ...dates].slice(0, 3); // Limit to 3 entities
+        contextKey = entities.length > 0 ? `_${entities.join('_').toLowerCase().replace(/\s+/g, '_')}` : `_${type}`;
+    }
+    
+    return `${subjectKey}_${humorMode}_${textHash}${contextKey}`;
 }
 
 function simpleHash(text) {

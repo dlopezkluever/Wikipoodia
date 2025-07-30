@@ -42,7 +42,7 @@ export const DEFAULT_HUMOR_MODE = HUMOR_MODES.GOOFY;
 // API configuration
 export const API_CONFIG = {
     OPENAI_ENDPOINT: 'https://api.openai.com/v1/chat/completions',
-    // API_KEY: 'YOUR_OPENAI_API_KEY_HERE',
+    API_KEY: 'YOUR_OPENAI_API_KEY_HERE',
     MODEL: 'gpt-3.5-turbo',
     MAX_TOKENS: 150,
     TEMPERATURE: 0.9
